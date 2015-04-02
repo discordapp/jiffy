@@ -480,18 +480,20 @@ i64ToAsciiTable(unsigned char *dst, ErlNifSInt64 value)
 static inline int
 enc_long(Encoder* e, ErlNifSInt64 val)
 {
-    if(!enc_ensure(e, e->bigint_as_string ? 34 : 32)) {
+    int as_string = e->bigint_as_string && (val < -9007199254740992 || val > 9007199254740992);
+
+    if(!enc_ensure(e, as_string ? 34 : 32)) {
         return 0;
     }
 
-    if (e->bigint_as_string) {
+    if (as_string) {
         e->p[e->i] = '"';
         e->i++;
     }
     
     e->i += i64ToAsciiTable(&(e->p[e->i]), val);
 
-    if (e->bigint_as_string) {
+    if (as_string) {
         e->p[e->i] = '"';
         e->i++;
         e->p[e->i] = 0;
