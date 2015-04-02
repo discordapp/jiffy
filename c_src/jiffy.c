@@ -36,6 +36,8 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
     st->atom_dedupe_keys = make_atom(env, "dedupe_keys");
     st->atom_copy_strings = make_atom(env, "copy_strings");
     st->atom_bigint_as_string = make_atom(env, "bigint_as_string");
+    st->atom_elixir_struct = make_atom(env, "__struct__");
+    st->atom_strip_elixir_struct = make_atom(env, "strip_elixir_struct");
 
     // Markers used in encoding
     st->ref_object = make_atom(env, "$object_ref$");
