@@ -35,6 +35,7 @@ typedef struct {
     int             pretty;
     int             use_nil;
     int             escape_forward_slashes;
+    int             bigint_as_string;
 
     int             shiftcnt;
     int             count;
@@ -78,6 +79,7 @@ enc_new(ErlNifEnv* env)
     e->pretty = 0;
     e->use_nil = 0;
     e->escape_forward_slashes = 0;
+    e->bigint_as_string = 0;
     e->shiftcnt = 0;
     e->count = 0;
 
@@ -478,11 +480,23 @@ i64ToAsciiTable(unsigned char *dst, ErlNifSInt64 value)
 static inline int
 enc_long(Encoder* e, ErlNifSInt64 val)
 {
-    if(!enc_ensure(e, 32)) {
+    if(!enc_ensure(e, e->bigint_as_string ? 34 : 32)) {
         return 0;
     }
 
+    if (e->bigint_as_string) {
+        e->p[e->i] = '"';
+        e->i++;
+    }
+    
     e->i += i64ToAsciiTable(&(e->p[e->i]), val);
+
+    if (e->bigint_as_string) {
+        e->p[e->i] = '"';
+        e->i++;
+        e->p[e->i] = 0;
+    }
+
     e->count++;
 
     return 1;
@@ -677,6 +691,8 @@ encode_init(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             e->escape_forward_slashes = 1;
         } else if(enif_is_identical(val, e->atoms->atom_use_nil)) {
             e->use_nil = 1;
+        } else if(enif_is_identical(val, e->atoms->atom_bigint_as_string)) {
+            e->bigint_as_string = 1;
         } else if(enif_is_identical(val, e->atoms->atom_force_utf8)) {
             // Ignore, handled in Erlang
         } else if(get_bytes_per_iter(env, val, &(e->bytes_per_red))) {
