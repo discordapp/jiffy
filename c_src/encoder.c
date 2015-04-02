@@ -34,6 +34,7 @@ typedef struct {
     int             uescape;
     int             pretty;
     int             use_nil;
+    int             bigint_as_string;
 
     int             shiftcnt;
     int             count;
@@ -77,6 +78,7 @@ enc_new(ErlNifEnv* env)
     e->uescape = 0;
     e->pretty = 0;
     e->use_nil = 0;
+    e->bigint_as_string = 0;
     e->shiftcnt = 0;
     e->count = 0;
 
@@ -388,8 +390,13 @@ enc_string(Encoder* e, ERL_NIF_TERM val)
 static inline int
 enc_long(Encoder* e, ErlNifSInt64 val)
 {
-    if(!enc_ensure(e, 32)) {
+    if(!enc_ensure(e, e->bigint_as_string ? 34 : 32)) {
         return 0;
+    }
+
+    if (e->bigint_as_string) {
+        e->p[e->i] = '"';
+        e->i++;
     }
 
 #if (defined(__WIN32__) || defined(_WIN32) || defined(_WIN32_))
@@ -401,6 +408,13 @@ enc_long(Encoder* e, ErlNifSInt64 val)
 #endif
 
     e->i += strlen(&(e->p[e->i]));
+
+    if (e->bigint_as_string) {
+        e->p[e->i] = '"';
+        e->i++;
+        e->p[e->i] = 0;
+    }
+
     e->count++;
 
     return 1;
@@ -593,6 +607,8 @@ encode_init(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             e->pretty = 1;
         } else if(enif_compare(val, e->atoms->atom_use_nil) == 0) {
             e->use_nil = 1;
+        } else if(enif_compare(val, e->atoms->atom_bigint_as_string) == 0) {
+            e->bigint_as_string = 1;
         } else if(enif_compare(val, e->atoms->atom_force_utf8) == 0) {
             // Ignore, handled in Erlang
         } else if(get_bytes_per_iter(env, val, &(e->bytes_per_iter))) {
