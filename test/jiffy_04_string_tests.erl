@@ -24,6 +24,18 @@ string_utf8_test_() ->
     [gen(utf8, Case) || Case <- cases(utf8)].
 
 
+string_bad_utf8_key_test_() ->
+    Cases = cases(bad_utf8_key),
+    {{J}, {E}} = hd(Cases),
+    ExtraProps = [{<<"abcdeefeadasffasdfa">>, I} || I <- lists:seq(1, 10000)],
+    Big = {{ExtraProps ++ J}, {ExtraProps ++ E}},
+    AllCases = [Big | Cases],
+    [gen(bad_utf8_key, Case) || Case <- AllCases].
+
+
+string_escaped_slashes_test_() ->
+    [gen(escaped_slashes, Case) || Case <- cases(escaped_slashes)].
+
 gen(ok, {J, E}) ->
     gen(ok, {J, E, J});
 gen(ok, {J1, E, J2}) ->
@@ -50,8 +62,19 @@ gen(utf8, {Case, Fixed}) ->
         ?_assertThrow({error, {invalid_string, _}}, jiffy:encode(Case)),
         ?_assertEqual(Fixed2, jiffy:encode(Case, [force_utf8])),
         ?_assertThrow({error, {_, invalid_string}}, jiffy:decode(Case2))
-    ]}.
+    ]};
 
+gen(bad_utf8_key, {J, E}) ->
+    {msg("Bad UTF-8 key: - ~p", [size(term_to_binary(J))]), [
+        ?_assertThrow({error, {invalid_object_member_key, _}}, jiffy:encode(J)),
+        ?_assertEqual(E, jiffy:decode(jiffy:encode(J, [force_utf8])))
+    ]};
+
+gen(escaped_slashes, {J, E}) ->
+    {msg("escaped_slashes - ~s", [J]), [
+        {"Decode", ?_assertEqual(E, dec(J))},
+        {"Encode", ?_assertEqual(J, enc(E, [escape_forward_slashes]))}
+    ]}.
 
 cases(ok) ->
     [
@@ -143,4 +166,17 @@ cases(utf8) ->
         {<<16#F8, 16#84, 16#80, 16#80, 16#80>>, <<16#EF, 16#BF, 16#BD>>},
         {<<16#FC, 16#80, 16#80, 16#80, 16#80, 16#80>>, <<16#EF, 16#BF, 16#BD>>},
         {<<16#FC, 16#82, 16#80, 16#80, 16#80, 16#80>>, <<16#EF, 16#BF, 16#BD>>}
+    ];
+
+cases(bad_utf8_key) ->
+    [
+        {
+            {[{<<"foo", 16#80, "bar">>, true}]},
+            {[{<<"foo", 16#EF, 16#BF, 16#BD, "bar">>, true}]}
+        }
+    ];
+
+cases(escaped_slashes) ->
+    [
+        {<<"\"\\/\"">>, <<"/">>}
     ].
