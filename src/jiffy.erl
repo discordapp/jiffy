@@ -5,13 +5,64 @@
 -export([decode/1, decode/2, encode/1, encode/2]).
 -define(NOT_LOADED, not_loaded(?LINE)).
 
+-compile([no_native]).
+
 -on_load(init/0).
 
 
+-type json_value() :: null
+                    | true
+                    | false
+                    | json_string()
+                    | json_number()
+                    | json_object()
+                    | json_array().
+
+-type json_array()  :: [json_value()].
+-type json_string() :: atom() | binary().
+-type json_number() :: integer() | float().
+
+-ifdef(JIFFY_NO_MAPS).
+
+-type json_object() :: {[{json_string(),json_value()}]}.
+
+-else.
+
+-type json_object() :: {[{json_string(),json_value()}]}
+                        | #{json_string() => json_value()}.
+
+-endif.
+
+-type jiffy_decode_result() :: json_value()
+                        | {has_trailer, json_value(), binary()}.
+
+-type decode_option() :: return_maps
+                        | use_nil
+                        | return_trailer
+                        | {null_term, any()}
+                        | {bytes_per_iter, non_neg_integer()}
+                        | {bytes_per_red, non_neg_integer()}.
+
+-type encode_option() :: uescape
+                        | pretty
+                        | force_utf8
+                        | use_nil
+                        | escape_forward_slashes
+                        | {bytes_per_iter, non_neg_integer()}
+                        | {bytes_per_red, non_neg_integer()}.
+
+-type decode_options() :: [decode_option()].
+-type encode_options() :: [encode_option()].
+
+-export_type([json_value/0, jiffy_decode_result/0]).
+
+
+-spec decode(iolist() | binary()) -> jiffy_decode_result().
 decode(Data) ->
     decode(Data, []).
 
 
+-spec decode(iolist() | binary(), decode_options()) -> jiffy_decode_result().
 decode(Data, Opts) when is_binary(Data), is_list(Opts) ->
     case nif_decode_init(Data, Opts) of
         {error, _} = Error ->
@@ -27,14 +78,19 @@ decode(Data, Opts) when is_list(Data) ->
     decode(iolist_to_binary(Data), Opts).
 
 
+-spec encode(json_value()) -> iodata().
 encode(Data) ->
     encode(Data, []).
 
 
+-spec encode(json_value(), encode_options()) -> iodata().
 encode(Data, Options) ->
     ForceUTF8 = lists:member(force_utf8, Options),
     case nif_encode_init(Data, Options) of
         {error, {invalid_string, _}} when ForceUTF8 == true ->
+            FixedData = jiffy_utf8:fix(Data),
+            encode(FixedData, Options -- [force_utf8]);
+        {error, {invalid_object_member_key, _}} when ForceUTF8 == true ->
             FixedData = jiffy_utf8:fix(Data),
             encode(FixedData, Options -- [force_utf8]);
         {error, _} = Error ->
@@ -137,6 +193,9 @@ encode_loop(Data, Options, Encoder, Stack, IOBuf) ->
     ForceUTF8 = lists:member(force_utf8, Options),
     case nif_encode_iter(Encoder, Stack, IOBuf) of
         {error, {invalid_string, _}} when ForceUTF8 == true ->
+            FixedData = jiffy_utf8:fix(Data),
+            encode(FixedData, Options -- [force_utf8]);
+        {error, {invalid_object_member_key, _}} when ForceUTF8 == true ->
             FixedData = jiffy_utf8:fix(Data),
             encode(FixedData, Options -- [force_utf8]);
         {error, _} = Error ->

@@ -2,6 +2,7 @@
 // See the LICENSE file for more information.
 
 #include "jiffy.h"
+#include <stdio.h>
 
 ERL_NIF_TERM
 make_atom(ErlNifEnv* env, const char* name)
@@ -57,37 +58,84 @@ get_bytes_per_iter(ErlNifEnv* env, ERL_NIF_TERM val, size_t* bpi)
         return 0;
     }
 
+    // Calculate the number of bytes per reduction
+    *bpi = (size_t) (bytes / DEFAULT_ERLANG_REDUCTION_COUNT);
+
+    return 1;
+}
+
+int
+get_bytes_per_red(ErlNifEnv* env, ERL_NIF_TERM val, size_t* bpi)
+{
+    jiffy_st* st = (jiffy_st*) enif_priv_data(env);
+    const ERL_NIF_TERM* tuple;
+    int arity;
+    unsigned int bytes;
+
+    if(!enif_get_tuple(env, val, &arity, &tuple)) {
+        return 0;
+    }
+
+    if(arity != 2) {
+        return 0;
+    }
+
+    if(enif_compare(tuple[0], st->atom_bytes_per_iter) != 0) {
+        return 0;
+    }
+
+    if(!enif_get_uint(env, tuple[1], &bytes)) {
+        return 0;
+    }
+
     *bpi = (size_t) bytes;
 
     return 1;
 }
 
 int
-should_yield(size_t used, size_t limit)
+get_null_term(ErlNifEnv* env, ERL_NIF_TERM val, ERL_NIF_TERM *null_term)
 {
-    if(limit == 0 || used < limit) {
-        return 0;
+    jiffy_st* st = (jiffy_st*) enif_priv_data(env);
+    const ERL_NIF_TERM* tuple;
+    int arity;
+
+    if(!enif_get_tuple(env, val, &arity, &tuple)) {
+      return 0;
     }
+
+    if(arity != 2) {
+      return 0;
+    }
+
+    if(enif_compare(tuple[0], st->atom_null_term) != 0) {
+      return 0;
+    }
+
+    if(!enif_is_atom(env, tuple[1])) {
+      return 0;
+    }
+
+    *null_term = tuple[1];
 
     return 1;
 }
 
 int
-consume_timeslice(ErlNifEnv* env, size_t used, size_t limit)
+should_yield(ErlNifEnv* env, size_t* used, size_t bytes_per_red)
 {
 #if(ERL_NIF_MAJOR_VERSION >= 2 && ERL_NIF_MINOR_VERSION >= 4)
-    double u = (double) used;
-    double l = (double) limit;
-    int perc = (int) (100.0 * (u / l));
 
-    if(perc < 1) {
-        perc = 1;
-    } else if(perc > 100) {
-        perc = 100;
+    if(((*used) / bytes_per_red) >= 20) {
+        *used = 0;
+        return enif_consume_timeslice(env, 1);
     }
 
-    return enif_consume_timeslice(env, perc);
-#else
     return 0;
+
+#else
+
+    return ((*used) / bytes_per_red) >= DEFAULT_ERLANG_REDUCTION_COUNT;
+
 #endif
 }
