@@ -1,8 +1,16 @@
+.eunit
+.rebar
+.tool-versions
 .jiffy.dev
 *.app
 *.beam
+*.d
 *.o
 *.so
-.eunit
+_build
+compile_commands.json
 deps
 erln8.config
+hexer.config
+rebar.lock
+TEST-*.xml
