@@ -8,6 +8,12 @@
 -include("jiffy_util.hrl").
 
 
+latin1_atom_test_() ->
+    Key = list_to_atom([228]), %% `ä`
+    Expected = <<"{\"", 195, 164, "\":\"bar\"}">>,
+    ?_assertEqual(Expected, jiffy:encode({[{Key, <<"bar">>}]})).
+
+
 string_success_test_() ->
     [gen(ok, Case) || Case <- cases(ok)].
 
@@ -23,6 +29,18 @@ string_error_test_() ->
 string_utf8_test_() ->
     [gen(utf8, Case) || Case <- cases(utf8)].
 
+
+string_bad_utf8_key_test_() ->
+    Cases = cases(bad_utf8_key),
+    {{J}, {E}} = hd(Cases),
+    ExtraProps = [{<<"abcdeefeadasffasdfa">>, I} || I <- lists:seq(1, 10000)],
+    Big = {{ExtraProps ++ J}, {ExtraProps ++ E}},
+    AllCases = [Big | Cases],
+    [gen(bad_utf8_key, Case) || Case <- AllCases].
+
+
+string_escaped_slashes_test_() ->
+    [gen(escaped_slashes, Case) || Case <- cases(escaped_slashes)].
 
 gen(ok, {J, E}) ->
     gen(ok, {J, E, J});
@@ -40,18 +58,29 @@ gen(uescaped, {J, E}) ->
 
 gen(error, J) ->
     {msg("error - ~s", [J]), [
-        ?_assertThrow({error, _}, dec(J))
+        ?_assertError(_, dec(J))
     ]};
 
 gen(utf8, {Case, Fixed}) ->
     Case2 = <<34, Case/binary, 34>>,
     Fixed2 = <<34, Fixed/binary, 34>>,
     {msg("UTF-8: ~s", [hex(Case)]), [
-        ?_assertThrow({error, {invalid_string, _}}, jiffy:encode(Case)),
-        ?_assertEqual(Fixed2, jiffy:encode(Case, [force_utf8])),
-        ?_assertThrow({error, {_, invalid_string}}, jiffy:decode(Case2))
-    ]}.
+        ?_assertError({invalid_string, _}, enc(Case)),
+        ?_assertEqual(Fixed2, enc(Case, [force_utf8])),
+        ?_assertError({_, invalid_string}, dec(Case2))
+    ]};
 
+gen(bad_utf8_key, {J, E}) ->
+    {msg("Bad UTF-8 key: - ~p", [size(term_to_binary(J))]), [
+        ?_assertError({invalid_object_member_key, _}, enc(J)),
+        ?_assertEqual(E, dec(enc(J, [force_utf8])))
+    ]};
+
+gen(escaped_slashes, {J, E}) ->
+    {msg("escaped_slashes - ~s", [J]), [
+        {"Decode", ?_assertEqual(E, dec(J))},
+        {"Encode", ?_assertEqual(J, enc(E, [escape_forward_slashes]))}
+    ]}.
 
 cases(ok) ->
     [
@@ -85,6 +114,10 @@ cases(uescaped) ->
         {
             <<"\"\\uD83D\\uDE0A\"">>,
             <<240, 159, 152, 138>>
+        },
+        {
+            <<"\"\\uDBFF\\uDFFF\"">>,
+            <<244, 143, 191, 191>>
         }
     ];
 
@@ -95,6 +128,7 @@ cases(error) ->
         <<"\"", 0, "\"">>,
         <<"\"\\g\"">>,
         <<"\"\\uD834foo\\uDD1E\"">>,
+        <<"\"\\u", 200, 200, 200, 200, "\"">>,
         % CouchDB-345
         <<34,78,69,73,77,69,78,32,70,216,82,82,32,70,65,69,78,33,34>>
     ];
@@ -143,4 +177,17 @@ cases(utf8) ->
         {<<16#F8, 16#84, 16#80, 16#80, 16#80>>, <<16#EF, 16#BF, 16#BD>>},
         {<<16#FC, 16#80, 16#80, 16#80, 16#80, 16#80>>, <<16#EF, 16#BF, 16#BD>>},
         {<<16#FC, 16#82, 16#80, 16#80, 16#80, 16#80>>, <<16#EF, 16#BF, 16#BD>>}
+    ];
+
+cases(bad_utf8_key) ->
+    [
+        {
+            {[{<<"foo", 16#80, "bar">>, true}]},
+            {[{<<"foo", 16#EF, 16#BF, 16#BD, "bar">>, true}]}
+        }
+    ];
+
+cases(escaped_slashes) ->
+    [
+        {<<"\"\\/\"">>, <<"/">>}
     ].

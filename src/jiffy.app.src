@@ -1,6 +1,21 @@
 {application, jiffy, [
     {description, "JSON Decoder/Encoder."},
-    {vsn, git},
+    {vsn, "1.0.8"},
     {registered, []},
-    {applications, [kernel, stdlib]}
+    {applications, [kernel, stdlib, xmerl]},
+    {maintainers, ["Paul J. Davis"]},
+    {licenses, ["MIT", "BSD"]},
+    {links, [{"GitHub", "https://github.com/davisp/jiffy"}]},
+    {files, [
+        "LICENSE",
+        "Makefile",
+        "README.md",
+        "c_src",
+        "enc",
+        "plugins",
+        "rebar.config",
+        "rebar.config.script",
+        "src",
+        "test"
+    ]}
 ]}.

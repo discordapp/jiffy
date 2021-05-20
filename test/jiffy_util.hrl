@@ -1,5 +1,8 @@
+% This file is part of Jiffy released under the MIT license.
+% See the LICENSE file for more information.
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 msg(Fmt, Args) ->
     M1 = io_lib:format(Fmt, Args),
@@ -19,9 +22,26 @@ dec(V) ->
     jiffy:decode(V).
 
 
+dec(V, Opts) ->
+    jiffy:decode(V, Opts).
+
+
 enc(V) ->
     iolist_to_binary(jiffy:encode(V)).
 
 
 enc(V, Opts) ->
     iolist_to_binary(jiffy:encode(V, Opts)).
+
+
+%% rebar runs eunit with PWD as .eunit/
+%% rebar3 runs eunit with PWD as ./
+%% this adapts to the differences
+cases_path(Suffix) ->
+    {ok, Cwd} = file:get_cwd(),
+    Prefix = case filename:basename(Cwd) of
+        ".eunit" -> "..";
+        _ -> "."
+    end,
+    Path = "test/cases",
+    filename:join([Prefix, Path, Suffix]).

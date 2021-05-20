@@ -5,6 +5,7 @@
 
 
 -include_lib("eunit/include/eunit.hrl").
+-include("jiffy_util.hrl").
 
 
 yajl_test_() ->
@@ -12,14 +13,14 @@ yajl_test_() ->
     [gen(Case) || Case <- Cases].
 
 
-gen({Name, Json, {error, _}=Erl}) ->
-    {Name, ?_assertThrow(Erl, jiffy:decode(Json))};
+gen({Name, Json, {error, Erl}}) ->
+    {Name, ?_assertError(Erl, jiffy:decode(Json))};
 gen({Name, Json, Erl}) ->
     {Name, ?_assertEqual(Erl, jiffy:decode(Json))}.
 
 
 read_cases() ->
-    CasesPath = filename:join(["..", "test", "cases", "*.json"]),
+    CasesPath = cases_path("*.json"),
     FileNames = lists:sort(filelib:wildcard(CasesPath)),
     lists:map(fun(F) -> make_pair(F) end, FileNames).
 

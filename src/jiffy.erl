@@ -5,20 +5,73 @@
 -export([decode/1, decode/2, encode/1, encode/2]).
 -define(NOT_LOADED, not_loaded(?LINE)).
 
+-compile([no_native]).
+
 -on_load(init/0).
 
 
+-type json_value() :: null
+                    | true
+                    | false
+                    | json_string()
+                    | json_number()
+                    | json_object()
+                    | json_array().
+
+-type json_array()  :: [json_value()].
+-type json_string() :: atom() | binary().
+-type json_number() :: integer() | float().
+
+-ifdef(JIFFY_NO_MAPS).
+
+-type json_object() :: {[{json_string(),json_value()}]}.
+
+-else.
+
+-type json_object() :: {[{json_string(),json_value()}]}
+                        | #{json_string() => json_value()}.
+
+-endif.
+
+-type jiffy_decode_result() :: json_value()
+                        | {has_trailer, json_value(), binary()}.
+
+-type decode_option() :: return_maps
+                        | use_nil
+                        | return_trailer
+                        | dedupe_keys
+                        | copy_strings
+                        | {null_term, any()}
+                        | {bytes_per_iter, non_neg_integer()}
+                        | {bytes_per_red, non_neg_integer()}.
+
+-type encode_option() :: uescape
+                        | pretty
+                        | force_utf8
+                        | use_nil
+                        | escape_forward_slashes
+                        | {bytes_per_iter, non_neg_integer()}
+                        | {bytes_per_red, non_neg_integer()}.
+
+-type decode_options() :: [decode_option()].
+-type encode_options() :: [encode_option()].
+
+-export_type([json_value/0, jiffy_decode_result/0]).
+
+
+-spec decode(iolist() | binary()) -> jiffy_decode_result().
 decode(Data) ->
     decode(Data, []).
 
 
+-spec decode(iolist() | binary(), decode_options()) -> jiffy_decode_result().
 decode(Data, Opts) when is_binary(Data), is_list(Opts) ->
     case nif_decode_init(Data, Opts) of
-        {error, _} = Error ->
-            throw(Error);
+        {error, Error} ->
+            error(Error);
         {partial, EJson} ->
             finish_decode(EJson);
-        {iter, Decoder, Val, Objs, Curr} ->
+        {iter, {_, Decoder, Val, Objs, Curr}} ->
             decode_loop(Data, Decoder, Val, Objs, Curr);
         EJson ->
             EJson
@@ -27,24 +80,31 @@ decode(Data, Opts) when is_list(Data) ->
     decode(iolist_to_binary(Data), Opts).
 
 
+-spec encode(json_value()) -> iodata().
 encode(Data) ->
     encode(Data, []).
 
 
+-spec encode(json_value(), encode_options()) -> iodata().
 encode(Data, Options) ->
     ForceUTF8 = lists:member(force_utf8, Options),
     case nif_encode_init(Data, Options) of
         {error, {invalid_string, _}} when ForceUTF8 == true ->
             FixedData = jiffy_utf8:fix(Data),
             encode(FixedData, Options -- [force_utf8]);
-        {error, _} = Error ->
-            throw(Error);
+        {error, {invalid_object_member_key, _}} when ForceUTF8 == true ->
+            FixedData = jiffy_utf8:fix(Data),
+            encode(FixedData, Options -- [force_utf8]);
+        {error, Error} ->
+            error(Error);
         {partial, IOData} ->
             finish_encode(IOData, []);
-        {iter, Encoder, Stack, IOBuf} ->
+        {iter, {Encoder, Stack, IOBuf}} ->
             encode_loop(Data, Options, Encoder, Stack, IOBuf);
-        IOData ->
-            IOData
+        [Bin] when is_binary(Bin) ->
+            Bin;
+        RevIOData when is_list(RevIOData) ->
+            lists:reverse(RevIOData)
     end.
 
 
@@ -59,13 +119,25 @@ finish_decode({bignum_e, Value}) ->
             {E, []} = string:to_integer(ExpStr),
             {I, E}
     end,
-    IVal * math:pow(10, EVal);
+    try
+        IVal * math:pow(10, EVal)
+    catch
+        error:badarith ->
+            error({range, EVal})
+    end;
 finish_decode({bigdbl, Value}) ->
-    list_to_float(binary_to_list(Value));
+    try
+        list_to_float(binary_to_list(Value))
+    catch
+        error:badarg ->
+            error({range, Value})
+    end;
 finish_decode({Pairs}) when is_list(Pairs) ->
     finish_decode_obj(Pairs, []);
 finish_decode(Vals) when is_list(Vals) ->
     finish_decode_arr(Vals, []);
+finish_decode({has_trailer, Value, Rest}) ->
+    {has_trailer, finish_decode(Value), Rest};
 finish_decode(Val) ->
     maybe_map(Val).
 
@@ -103,9 +175,9 @@ finish_encode([Val | Rest], Acc) when is_integer(Val) ->
     Bin = list_to_binary(integer_to_list(Val)),
     finish_encode(Rest, [Bin | Acc]);
 finish_encode([InvalidEjson | _], _) ->
-    throw({error, {invalid_ejson, InvalidEjson}});
+    error({invalid_ejson, InvalidEjson});
 finish_encode(_, _) ->
-    throw({error, invalid_ejson}).
+    error(invalid_ejson).
 
 
 init() ->
@@ -122,11 +194,11 @@ init() ->
 
 decode_loop(Data, Decoder, Val, Objs, Curr) ->
     case nif_decode_iter(Data, Decoder, Val, Objs, Curr) of
-        {error, _} = Error ->
-            throw(Error);
+        {error, Error} ->
+            error(Error);
         {partial, EJson} ->
             finish_decode(EJson);
-        {iter, NewDecoder, NewVal, NewObjs, NewCurr} ->
+        {iter, {_, NewDecoder, NewVal, NewObjs, NewCurr}} ->
             decode_loop(Data, NewDecoder, NewVal, NewObjs, NewCurr);
         EJson ->
             EJson
@@ -139,14 +211,19 @@ encode_loop(Data, Options, Encoder, Stack, IOBuf) ->
         {error, {invalid_string, _}} when ForceUTF8 == true ->
             FixedData = jiffy_utf8:fix(Data),
             encode(FixedData, Options -- [force_utf8]);
-        {error, _} = Error ->
-            throw(Error);
+        {error, {invalid_object_member_key, _}} when ForceUTF8 == true ->
+            FixedData = jiffy_utf8:fix(Data),
+            encode(FixedData, Options -- [force_utf8]);
+        {error, Error} ->
+            error(Error);
         {partial, IOData} ->
             finish_encode(IOData, []);
-        {iter, NewEncoder, NewStack, NewIOBuf} ->
+        {iter, {NewEncoder, NewStack, NewIOBuf}} ->
             encode_loop(Data, Options, NewEncoder, NewStack, NewIOBuf);
-        IOData ->
-            IOData
+        [Bin] when is_binary(Bin) ->
+            Bin;
+        RevIOData when is_list(RevIOData) ->
+            lists:reverse(RevIOData)
     end.
 
 

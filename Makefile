@@ -15,17 +15,7 @@ distclean: clean
 	git clean -fxd
 
 
-devmarker:
-	@touch .jiffy.dev
-
-
-depends: devmarker
-	@if test ! -d ./deps/proper; then \
-		$(REBAR) get-deps; \
-	fi
-
-
-build: depends
+build:
 	$(REBAR) compile
 
 
@@ -34,6 +24,10 @@ eunit:
 
 
 check: build eunit
+
+
+release:
+	rebar3 hex publish
 
 
 %.beam: %.erl
