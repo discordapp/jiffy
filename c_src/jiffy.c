@@ -31,6 +31,9 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
     st->atom_has_trailer = make_atom(env, "has_trailer");
     st->atom_nil = make_atom(env, "nil");
     st->atom_use_nil = make_atom(env, "use_nil");
+    st->atom_bigint_as_string = make_atom(env, "bigint_as_string");
+    st->atom_elixir_struct = make_atom(env, "__struct__");
+    st->atom_strip_elixir_struct = make_atom(env, "strip_elixir_struct");
     st->atom_null_term = make_atom(env, "null_term");
     st->atom_escape_forward_slashes = make_atom(env, "escape_forward_slashes");
     st->atom_dedupe_keys = make_atom(env, "dedupe_keys");

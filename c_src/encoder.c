@@ -34,6 +34,8 @@ typedef struct {
     int             uescape;
     int             pretty;
     int             use_nil;
+    int             bigint_as_string;
+    int             strip_elixir_struct;
     int             escape_forward_slashes;
 
     int             shiftcnt;
@@ -77,6 +79,8 @@ enc_new(ErlNifEnv* env)
     e->uescape = 0;
     e->pretty = 0;
     e->use_nil = 0;
+    e->bigint_as_string = 0;
+    e->strip_elixir_struct = 0;
     e->escape_forward_slashes = 0;
     e->shiftcnt = 0;
     e->count = 0;
@@ -478,11 +482,25 @@ i64ToAsciiTable(unsigned char *dst, ErlNifSInt64 value)
 static inline int
 enc_long(Encoder* e, ErlNifSInt64 val)
 {
-    if(!enc_ensure(e, 32)) {
+    int as_string = e->bigint_as_string && (val < -9007199254740992 || val > 9007199254740992);
+
+    if(!enc_ensure(e, as_string ? 34 : 32)) {
         return 0;
     }
 
+    if (as_string) {
+        e->p[e->i] = '"';
+        e->i++;
+    }
+
     e->i += i64ToAsciiTable(&(e->p[e->i]), val);
+
+    if (as_string) {
+        e->p[e->i] = '"';
+        e->i++;
+        e->p[e->i] = 0;
+    }
+
     e->count++;
 
     return 1;
@@ -597,7 +615,7 @@ enc_comma(Encoder* e)
 
 #if MAP_TYPE_PRESENT
 int
-enc_map_to_ejson(ErlNifEnv* env, ERL_NIF_TERM map, ERL_NIF_TERM* out)
+enc_map_to_ejson(Encoder* e, ErlNifEnv* env, ERL_NIF_TERM map, ERL_NIF_TERM* out)
 {
     ErlNifMapIterator iter;
     size_t size;
@@ -626,6 +644,10 @@ enc_map_to_ejson(ErlNifEnv* env, ERL_NIF_TERM map, ERL_NIF_TERM* out)
         if(!enif_map_iterator_get_pair(env, &iter, &key, &val)) {
             enif_map_iterator_destroy(env, &iter);
             return 0;
+        }
+        if(e->strip_elixir_struct && enif_compare(key, e->atoms->atom_elixir_struct) == 0) {
+            size--;
+            continue;
         }
         tuple = enif_make_tuple2(env, key, val);
         list = enif_make_list_cell(env, tuple, list);
@@ -677,6 +699,10 @@ encode_init(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             e->escape_forward_slashes = 1;
         } else if(enif_is_identical(val, e->atoms->atom_use_nil)) {
             e->use_nil = 1;
+        } else if(enif_is_identical(val, e->atoms->atom_bigint_as_string)) {
+            e->bigint_as_string = 1;
+        } else if(enif_is_identical(val, e->atoms->atom_strip_elixir_struct)) {
+            e->strip_elixir_struct = 1;
         } else if(enif_is_identical(val, e->atoms->atom_force_utf8)) {
             // Ignore, handled in Erlang
         } else if(get_bytes_per_iter(env, val, &(e->bytes_per_red))) {
@@ -899,7 +925,7 @@ encode_iter(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
             termstack_push(&stack, tuple[1]);
 #if MAP_TYPE_PRESENT
         } else if(enif_is_map(env, curr)) {
-            if(!enc_map_to_ejson(env, curr, &curr)) {
+            if(!enc_map_to_ejson(e, env, curr, &curr)) {
                 ret = enc_error(e, "internal_error");
                 goto done;
             }

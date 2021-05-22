@@ -40,6 +40,9 @@ typedef struct {
     ERL_NIF_TERM    atom_has_trailer;
     ERL_NIF_TERM    atom_nil;
     ERL_NIF_TERM    atom_use_nil;
+    ERL_NIF_TERM    atom_bigint_as_string;
+    ERL_NIF_TERM    atom_elixir_struct;
+    ERL_NIF_TERM    atom_strip_elixir_struct;
     ERL_NIF_TERM    atom_null_term;
     ERL_NIF_TERM    atom_escape_forward_slashes;
     ERL_NIF_TERM    atom_dedupe_keys;
