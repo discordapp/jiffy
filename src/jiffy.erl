@@ -50,6 +50,8 @@
                         | force_utf8
                         | use_nil
                         | escape_forward_slashes
+                        | strip_elixir_struct
+                        | bigint_as_string
                         | {bytes_per_iter, non_neg_integer()}
                         | {bytes_per_red, non_neg_integer()}.
 
